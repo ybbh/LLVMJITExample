@@ -159,7 +159,7 @@ void MaterializeTuple(char* tuple, TupleDesc *desc) {
           *(int*) slot = 1;
           break;
         case INT64:
-          *(int*) slot = 2;
+          *(long*) slot = 2;
           break;
         case FLOAT:
           *(float*) slot = 3.5;
