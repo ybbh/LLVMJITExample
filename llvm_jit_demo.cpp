@@ -6,6 +6,7 @@
 // Description : LLVM JIT demo in C++, Ansi-style
 //============================================================================
 
+#include <time.h>
 #include <cassert>
 #include <cctype>
 #include <cstdint>
@@ -51,9 +52,11 @@
 
 using namespace llvm;
 using namespace std;
+
 typedef orc::ObjectLinkingLayer<> ObjLayerT;
 typedef orc::IRCompileLayer<ObjLayerT> CompileLayerT;
 
+static int N = 1000000000;
 static LLVMContext TheContext;
 static IRBuilder<> Builder(TheContext);
 static std::unique_ptr<Module> TheModule;
@@ -147,9 +150,8 @@ Function *CodeGen(TupleDesc *desc) {
   return fucntion;
 }
 
-void MaterializeTuple(char* tuple, TupleDesc *desc) {
+void __attribute__ ((noinline)) MaterializeTuple(char* tuple, TupleDesc *desc) {
   for (int i = 0; i < desc->num_slots_; ++i) {
-    {
       char *slot = tuple + desc->offset_[i];
       switch (desc->data_type_[i]) {
         case BOOLEAN:
@@ -169,7 +171,6 @@ void MaterializeTuple(char* tuple, TupleDesc *desc) {
           break;
       }
     }
-  }
 }
 
 static void InitializeModuleAndPassManager() {
@@ -205,8 +206,6 @@ int main() {
   InitializeModuleAndPassManager();
 
 
-
-
   // Prepare jit layer
   ObjLayerT ObjectLayer;
   std::unique_ptr<TargetMachine> TM(EngineBuilder().selectTarget());
@@ -221,11 +220,20 @@ int main() {
       [](const std::string &S) {return nullptr;});
 
   TupleDesc *desc = CreateDesc();
+  
+  clock_t c_start = clock();
   CodeGen(desc);
-
+  clock_t c_stop = clock();
+  float elapsed = (float)(c_stop - c_start) / (float)CLOCKS_PER_SEC * 1000.0f;
+  std::cout << "Compilation time : " << elapsed << "ms." << std::endl;
+  
+#if DUMP_LLVM_IR
   // Dump the llvm IR
+  std::cout << "-----------------------------------------" << std::endl;
   TheModule->dump();
-
+  std::cout << "-----------------------------------------" << std::endl;
+#endif
+  
   // Add MyModule to the jit layer
   std::vector<std::unique_ptr<Module>> Modules;
   Modules.push_back(std::move(TheModule));
@@ -235,7 +243,12 @@ int main() {
 
 
   char  *tuple1 = new char[desc->size_];
+  c_start = clock();
+  for (int i = 0; i < N; i++)
   MaterializeTuple(tuple1, desc);
+  c_stop = clock();
+  elapsed = (float)(c_stop - c_start) / (float)CLOCKS_PER_SEC * 1000.0f;
+  std::cout << "Run C++ code MaterializeTuple time : " << elapsed << "ms." << std::endl;
 
   std::string MangledName;
   raw_string_ostream MangledNameStream(MangledName);
@@ -246,7 +259,12 @@ int main() {
   // Cast to function
   auto func = (void (*)(char *))Sym.getAddress();
   char *tuple2 = new char[desc->size_];
-  func(tuple2);
+  c_start = clock();
+  for (int i = 0; i < N; i++)
+  	func(tuple2);
+  c_stop = clock();
+  elapsed = (float)(c_stop - c_start) / (float)CLOCKS_PER_SEC * 1000.0f;
+  std::cout << "Run LLVM JIT MaterializeTuple time : " << elapsed << "ms." << std::endl;
 
   return 0;
 }
